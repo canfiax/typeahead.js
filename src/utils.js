@@ -4,7 +4,9 @@
  * Copyright 2013 Twitter, Inc. and other contributors; Licensed MIT
  */
 
-var utils = {
+var _;
+
+_ = {
   isMsie: function() {
     var match = /(msie) ([\w.]+)/i.exec(navigator.userAgent);
 
@@ -47,7 +49,12 @@ var utils = {
     return -1;
   },
 
-  each: $.each,
+  each: function(collection, cb) {
+    // stupid argument order for jQuery.each
+    $.each(collection, reverseArgs);
+
+    function reverseArgs(index, value) { return cb(value, index); }
+  },
 
   map: $.map,
 
@@ -142,18 +149,6 @@ var utils = {
 
       return result;
     };
-  },
-
-  tokenizeQuery: function(str) {
-    return $.trim(str).toLowerCase().split(/[\s]+/);
-  },
-
-  tokenizeText: function(str) {
-    return $.trim(str).toLowerCase().split(/[\s\-_]+/);
-  },
-
-  getProtocol: function() {
-    return location.protocol;
   },
 
   noop: function() {}
