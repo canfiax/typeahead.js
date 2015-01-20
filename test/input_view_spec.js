@@ -1,4 +1,4 @@
-describe('InputView', function() {
+describe('Input', function() {
   var KEYS;
 
    KEYS = {
@@ -21,13 +21,13 @@ describe('InputView', function() {
     this.$input = $fixture.find('.tt-input');
     this.$hint = $fixture.find('.tt-hint');
 
-    this.view = new InputView({ input: this.$input, hint: this.$hint });
+    this.view = new Input({ input: this.$input, hint: this.$hint });
   });
 
   it('should throw an error if no hint and/or input is provided', function() {
     expect(noInput).toThrow();
 
-    function noInput() { new InputView({ hint: '.hint' }); }
+    function noInput() { new Input({ hint: '.hint' }); }
   });
 
   describe('when the blur DOM event is triggered', function() {
@@ -83,7 +83,7 @@ describe('InputView', function() {
     it('should prevent default behavior if there is a hint', function() {
       var $e;
 
-      this.view.setHintValue('good');
+      this.view.setHint('good');
       this.view.setInputValue('goo');
 
       $e = simulateKeyEvent(this.$input, 'keydown', KEYS.tab);
@@ -273,10 +273,10 @@ describe('InputView', function() {
     });
   });
 
-  describe('#getHintValue/#setHintValue', function() {
+  describe('#getHint/#setHint', function() {
     it('should act as getter/setter to value of hint', function() {
-      this.view.setHintValue('mountain');
-      expect(this.view.getHintValue()).toBe('mountain');
+      this.view.setHint('mountain');
+      expect(this.view.getHint()).toBe('mountain');
     });
   });
 
@@ -292,10 +292,45 @@ describe('InputView', function() {
 
   describe('#clearHint', function() {
     it('should set the hint value to the empty string', function() {
-      this.view.setHintValue('cheese');
+      this.view.setHint('cheese');
       this.view.clearHint();
 
-      expect(this.view.getHintValue()).toBe('');
+      expect(this.view.getHint()).toBe('');
+    });
+  });
+
+  describe('#clearHintIfInvalid', function() {
+    it('should clear hint if input value is empty string', function() {
+      this.view.setInputValue('', true);
+      this.view.setHint('cheese');
+      this.view.clearHintIfInvalid();
+
+      expect(this.view.getHint()).toBe('');
+    });
+
+    it('should clear hint if input value is not prefix of input', function() {
+      this.view.setInputValue('milk', true);
+      this.view.setHint('cheese');
+      this.view.clearHintIfInvalid();
+
+      expect(this.view.getHint()).toBe('');
+    });
+
+    it('should clear hint if overflow exists', function() {
+      spyOn(this.view, 'hasOverflow').andReturn(true);
+      this.view.setInputValue('che', true);
+      this.view.setHint('cheese');
+      this.view.clearHintIfInvalid();
+
+      expect(this.view.getHint()).toBe('');
+    });
+
+    it('should not clear hint if input value is prefix of input', function() {
+      this.view.setInputValue('che', true);
+      this.view.setHint('cheese');
+      this.view.clearHintIfInvalid();
+
+      expect(this.view.getHint()).toBe('cheese');
     });
   });
 
@@ -338,6 +373,31 @@ describe('InputView', function() {
 
       setCursorPosition(this.$input, 1);
       expect(this.view.isCursorAtEnd()).toBe(false);
+    });
+  });
+
+  describe('#destroy', function() {
+    it('should remove event handlers', function() {
+      var $input, $hint;
+
+      $hint = this.view.$hint;
+      $input = this.view.$input;
+
+      spyOn($hint, 'off');
+      spyOn($input, 'off');
+
+      this.view.destroy();
+
+      expect($hint.off).toHaveBeenCalledWith('.tt');
+      expect($input.off).toHaveBeenCalledWith('.tt');
+    });
+
+    it('should null out its reference to DOM elements', function() {
+      this.view.destroy();
+
+      expect(this.view.$hint).toBeNull();
+      expect(this.view.$input).toBeNull();
+      expect(this.view.$overflowHelper).toBeNull();
     });
   });
 

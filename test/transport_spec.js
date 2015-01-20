@@ -2,6 +2,7 @@ describe('Transport', function() {
 
   beforeEach(function() {
     jasmine.Ajax.useMock();
+    jasmine.Clock.useMock();
 
     this.transport = new Transport();
   });
@@ -28,7 +29,7 @@ describe('Transport', function() {
     req.response(resp);
 
     expect(req.url).toBe('/test');
-    expect(spy).toHaveBeenCalledWith(resp.parsed);
+    expect(spy).toHaveBeenCalledWith(null, resp.parsed);
   });
 
   it('should allow the transport mechanism to be configured', function() {
@@ -36,20 +37,18 @@ describe('Transport', function() {
         cbSpy = jasmine.createSpy(),
         sendSpy = jasmine.createSpy().andCallFake(send);
 
-    this.transport = new Transport({ send: sendSpy });
+    this.transport = new Transport({ transport: sendSpy });
     this.transport.get('/test', cbSpy);
 
-    waitsFor(function() { return cbSpy.callCount; });
+    jasmine.Clock.tick(0);
 
-    runs(function() {
-      expect(cbSpy).toHaveBeenCalledWith(resp.parsed);
-      expect(sendSpy).toHaveBeenCalledWith(
-        '/test',
-        {},
-        jasmine.any(Function),
-        jasmine.any(Function)
-      );
-    });
+    expect(cbSpy).toHaveBeenCalledWith(null, resp.parsed);
+    expect(sendSpy).toHaveBeenCalledWith(
+      '/test',
+      {},
+      jasmine.any(Function),
+      jasmine.any(Function)
+    );
 
     // send must be async
     function send(url, o, onSuccess, onError) { onSuccess(resp.parsed); }
@@ -70,8 +69,8 @@ describe('Transport', function() {
       this.transport.get('/test' + i, $.noop);
     }
 
-    waits(100); // arbitrary amount of time
-    runs(function() { expect(ajaxRequests.length).toBe(1); });
+    jasmine.Clock.tick(100);
+    expect(ajaxRequests.length).toBe(1);
 
     function rateLimiter(fn) { return _.debounce(fn, 20); }
   });
@@ -90,15 +89,24 @@ describe('Transport', function() {
     this.transport.get('/test1', spy1);
     this.transport.get('/test2', spy2);
 
-    waitsFor(function() { return spy1.callCount && spy2.callCount; });
+    jasmine.Clock.tick(0);
 
-    runs(function() {
-      // no ajax requests were made on subsequent requests
-      expect(ajaxRequests.length).toBe(2);
+    // no ajax requests were made on subsequent requests
+    expect(ajaxRequests.length).toBe(2);
 
-      expect(spy1).toHaveBeenCalledWith(fixtures.ajaxResps.ok.parsed);
-      expect(spy2).toHaveBeenCalledWith(fixtures.ajaxResps.ok1.parsed);
-    });
+    expect(spy1).toHaveBeenCalledWith(null, fixtures.ajaxResps.ok.parsed);
+    expect(spy2).toHaveBeenCalledWith(null, fixtures.ajaxResps.ok1.parsed);
+  });
+
+  it('should not cache requests if cache option is false', function() {
+    this.transport = new Transport({ cache: false });
+
+    this.transport.get('/test1', $.noop);
+    mostRecentAjaxRequest().response(fixtures.ajaxResps.ok);
+    this.transport.get('/test1', $.noop);
+    mostRecentAjaxRequest().response(fixtures.ajaxResps.ok);
+
+    expect(ajaxRequests.length).toBe(2);
   });
 
   it('should prevent dog pile', function() {
@@ -114,8 +122,8 @@ describe('Transport', function() {
     waitsFor(function() { return spy1.callCount && spy2.callCount; });
 
     runs(function() {
-      expect(spy1).toHaveBeenCalledWith(fixtures.ajaxResps.ok.parsed);
-      expect(spy2).toHaveBeenCalledWith(fixtures.ajaxResps.ok.parsed);
+      expect(spy1).toHaveBeenCalledWith(null, fixtures.ajaxResps.ok.parsed);
+      expect(spy2).toHaveBeenCalledWith(null, fixtures.ajaxResps.ok.parsed);
     });
   });
 
@@ -139,7 +147,7 @@ describe('Transport', function() {
     expect(spy).toHaveBeenCalled();
   });
 
-  it('should not invoke the callback on failure', function() {
+  it('should invoke the callback with err set to true on failure', function() {
     var req, resp = fixtures.ajaxResps.err, spy = jasmine.createSpy();
 
     this.transport.get('/test', spy);
@@ -148,6 +156,42 @@ describe('Transport', function() {
     req.response(resp);
 
     expect(req.url).toBe('/test');
-    expect(spy).not.toHaveBeenCalledWith(resp.parsed);
+    expect(spy).toHaveBeenCalledWith(true);
+  });
+
+  it('should not send cancelled requests', function() {
+    this.transport = new Transport({ rateLimiter: rateLimiter });
+
+    this.transport.get('/test', $.noop);
+    this.transport.cancel();
+
+    jasmine.Clock.tick(100);
+    expect(ajaxRequests.length).toBe(0);
+
+    function rateLimiter(fn) { return _.debounce(fn, 20); }
+  });
+
+  it('should not send outdated requests', function() {
+    this.transport = new Transport({ rateLimiter: rateLimiter });
+
+    // warm cache
+    this.transport.get('/test1', $.noop);
+    jasmine.Clock.tick(100);
+    mostRecentAjaxRequest().response(fixtures.ajaxResps.ok);
+
+    expect(mostRecentAjaxRequest().url).toBe('/test1');
+    expect(ajaxRequests.length).toBe(1);
+
+    // within the same rate-limit cycle, request test2 and test1. test2 becomes
+    // outdated after test1 is requested and no request is sent for test1
+    // because it's a cache hit
+    this.transport.get('/test2', $.noop);
+    this.transport.get('/test1', $.noop);
+
+    jasmine.Clock.tick(100);
+
+    expect(ajaxRequests.length).toBe(1);
+
+    function rateLimiter(fn) { return _.debounce(fn, 20); }
   });
 });

@@ -2,13 +2,13 @@
   var components;
 
   components = [
-    'Dataset',
+    'Bloodhound',
     'PersistentStorage',
     'Transport',
     'SearchIndex',
-    'InputView',
-    'SectionView',
-    'DropdownView'
+    'Input',
+    'Dataset',
+    'Dropdown'
     ];
 
   for (var i = 0; i < components.length; i++) {

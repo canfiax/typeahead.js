@@ -1,44 +1,26 @@
-describe('DropdownView', function() {
+describe('Dropdown', function() {
 
   beforeEach(function() {
     var $fixture;
 
-    jasmine.SectionView.useMock();
+    jasmine.Dataset.useMock();
 
     setFixtures(fixtures.html.menu);
 
     $fixture = $('#jasmine-fixtures');
     this.$menu = $fixture.find('.tt-dropdown-menu');
-    this.$menu.html(fixtures.html.section);
+    this.$menu.html(fixtures.html.dataset);
 
-    this.section = new SectionView();
-
-    this.view = new DropdownView({
-      menu: this.$menu,
-      sections: [this.section]
-    });
+    this.view = new Dropdown({ menu: this.$menu, datasets: [{}] });
+    this.dataset = this.view.datasets[0];
   });
 
-  it('should throw an error if menu and/or sections is missing', function() {
+  it('should throw an error if menu and/or datasets is missing', function() {
     expect(noMenu).toThrow();
-    expect(noSections).toThrow();
+    expect(noDatasets).toThrow();
 
-    function noMenu() { new DropdownView({ menu: '.menu' }); }
-    function noSections() { new DropdownView({ sections: true }); }
-  });
-
-  describe('when mouseenter is triggered', function() {
-    it('should set isMouseOverDropdown to true', function() {
-      this.$menu.mouseleave().mouseenter();
-      expect(this.view.isMouseOverDropdown).toBe(true);
-    });
-  });
-
-  describe('when mouseleave is triggered', function() {
-    it('should set isMouseOverDropdown to false', function() {
-      this.$menu.mouseenter().mouseleave();
-      expect(this.view.isMouseOverDropdown).toBe(false);
-    });
+    function noMenu() { new Dropdown({ menu: '.menu' }); }
+    function noDatasets() { new Dropdown({ datasets: true }); }
   });
 
   describe('when click event is triggered on a suggestion', function() {
@@ -54,6 +36,19 @@ describe('DropdownView', function() {
   });
 
   describe('when mouseenter is triggered on a suggestion', function() {
+    it('should remove pre-existing cursor', function() {
+      var $first, $last;
+
+      $first = this.$menu.find('.tt-suggestion').first();
+      $last = this.$menu.find('.tt-suggestion').last();
+
+      $first.addClass('tt-cursor');
+      $last.mouseenter();
+
+      expect($first).not.toHaveClass('tt-cursor');
+      expect($last).toHaveClass('tt-cursor');
+    });
+
     it('should set the cursor', function() {
       var $suggestion;
 
@@ -61,6 +56,17 @@ describe('DropdownView', function() {
       $suggestion.mouseenter();
 
       expect($suggestion).toHaveClass('tt-cursor');
+    });
+
+    it('should not trigger cursorMoved', function() {
+      var spy, $suggestion;
+
+      this.view.onSync('cursorMoved', spy = jasmine.createSpy());
+
+      $suggestion = this.$menu.find('.tt-suggestion').first();
+      $suggestion.mouseenter();
+
+      expect(spy).not.toHaveBeenCalled();
     });
   });
 
@@ -75,24 +81,56 @@ describe('DropdownView', function() {
     });
   });
 
-  describe('when rendered is triggered on a section', function() {
-    it('should trigger sectionRendered', function() {
+  describe('when rendered is triggered on a dataset', function() {
+    it('should hide the dropdown if empty', function() {
+      this.dataset.isEmpty.andReturn(true);
+
+      this.view.open();
+      this.view._show();
+      this.dataset.trigger('rendered');
+
+      expect(this.$menu).not.toBeVisible();
+    });
+
+    it('should show the dropdown if not empty', function() {
+      this.dataset.isEmpty.andReturn(false);
+
+      this.view.open();
+      this.view._hide();
+      this.dataset.trigger('rendered');
+
+      expect(this.$menu).toBeVisible();
+    });
+
+    it('should trigger datasetRendered', function() {
       var spy;
 
-      this.view.onSync('sectionRendered', spy = jasmine.createSpy());
-      this.section.trigger('rendered');
+      this.view.onSync('datasetRendered', spy = jasmine.createSpy());
+      this.dataset.trigger('rendered');
 
       expect(spy).toHaveBeenCalled();
     });
   });
 
   describe('#open', function() {
-    it('should display the menu', function() {
+    it('should display the menu if not empty', function() {
       this.view.close();
+
+      this.view.isEmpty = false;
       this.view.open();
 
       expect(this.$menu).toBeVisible();
     });
+
+    it('should not display the menu if empty', function() {
+      this.view.close();
+
+      this.view.isEmpty = true;
+      this.view.open();
+
+      expect(this.$menu).not.toBeVisible();
+    });
+
 
     it('should trigger opened', function() {
       var spy;
@@ -215,10 +253,10 @@ describe('DropdownView', function() {
     it('should extract the datum from the suggestion element', function() {
       var $suggestion, datum;
 
-      $suggestion = $('<div>').data('ttDatum', { value: 'one' });
+      $suggestion = $('<div>').data({ ttValue: 'one', ttDatum: 'two' });
       datum = this.view.getDatumForSuggestion($suggestion);
 
-      expect(datum).toEqual({ value: 'one' });
+      expect(datum).toEqual({ value: 'one', raw: 'two' });
     });
 
     it('should return null if no element is given', function() {
@@ -231,10 +269,11 @@ describe('DropdownView', function() {
       var $first;
 
       $first = this.view._getSuggestions().eq(0);
-      $first.data('ttDatum', { value: 'one' });
+      $first.data({ ttValue: 'one', ttDatum: 'two' });
 
       this.view._setCursor($first);
-      expect(this.view.getDatumForCursor()).toEqual({ value: 'one' });
+      expect(this.view.getDatumForCursor())
+      .toEqual({ value: 'one', raw: 'two' });
     });
   });
 
@@ -243,44 +282,72 @@ describe('DropdownView', function() {
       var $first;
 
       $first = this.view._getSuggestions().eq(0);
-      $first.data('ttDatum', { value: 'one' });
+      $first.data({ ttValue: 'one', ttDatum: 'two' });
 
-      expect(this.view.getDatumForTopSuggestion()).toEqual({ value: 'one' });
+      expect(this.view.getDatumForTopSuggestion())
+      .toEqual({ value: 'one', raw: 'two' });
     });
   });
 
   describe('#update', function() {
-    it('should invoke update on each section', function() {
+    it('should invoke update on each dataset', function() {
       this.view.update();
-      expect(this.section.update).toHaveBeenCalled();
+      expect(this.dataset.update).toHaveBeenCalled();
     });
   });
 
   describe('#empty', function() {
-    it('should invoke clear on each section', function() {
+    it('should invoke clear on each dataset', function() {
       this.view.empty();
-      expect(this.section.clear).toHaveBeenCalled();
+      expect(this.dataset.clear).toHaveBeenCalled();
     });
   });
 
-  describe('#isEmpty', function() {
-    it('should return false if a header or footer is present', function() {
-      this.section.isEmpty.andReturn(true);
-      this.$menu.append('<div class="footer">');
+  describe('#isVisible', function() {
+    it('should return true if open and not empty', function() {
+      this.view.isOpen = true;
+      this.view.isEmpty = false;
 
-      expect(this.view.isEmpty()).toBe(false);
+      expect(this.view.isVisible()).toBe(true);
+
+      this.view.isOpen = false;
+      this.view.isEmpty = false;
+
+      expect(this.view.isVisible()).toBe(false);
+
+      this.view.isOpen = true;
+      this.view.isEmpty = true;
+
+      expect(this.view.isVisible()).toBe(false);
+
+      this.view.isOpen = false;
+      this.view.isEmpty = false;
+
+      expect(this.view.isVisible()).toBe(false);
+    });
+  });
+
+  describe('#destroy', function() {
+    it('should remove event handlers', function() {
+      var $menu = this.view.$menu;
+
+      spyOn($menu, 'off');
+
+      this.view.destroy();
+
+      expect($menu.off).toHaveBeenCalledWith('.tt');
     });
 
-    it('should return false if a section is not empty', function() {
-      this.section.isEmpty.andReturn(false);
+    it('should destroy its datasets', function() {
+      this.view.destroy();
 
-      expect(this.view.isEmpty()).toBe(false);
+      expect(this.dataset.destroy).toHaveBeenCalled();
     });
 
-    it('should return true otherwise', function() {
-      this.section.isEmpty.andReturn(true);
+    it('should null out its reference to the menu element', function() {
+      this.view.destroy();
 
-      expect(this.view.isEmpty()).toBe(true);
+      expect(this.view.$menu).toBeNull();
     });
   });
 });
